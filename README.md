@@ -1,5 +1,5 @@
 # linux-winwing
-Linux kernel module for [WinWing](https://winwingsim.com/) Orion2 throttle
+Linux kernel module for [WinWing](https://winwingsim.com/) Orion2 throttle base with F/A-18 Hornet grip
 
 On the Orion 2 throttle, numbers 0 .. 63 are reserved for buttons on the throttle grip; the throttle base buttons have numbers 64 .. 110.
 Some of the throttle base buttons don't work with Linux because the kernel HID subsystem only supports up to 80 buttons.

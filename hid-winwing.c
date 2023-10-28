@@ -19,8 +19,6 @@ static int winwing_probe(struct hid_device *hdev,
 {
 	int ret;
 
-	hid_info(hdev, "probe winwing\n");
-
 	ret = hid_parse(hdev);
 	if (ret) {
 		hid_err(hdev, "parse failed\n");
@@ -36,26 +34,36 @@ static int winwing_probe(struct hid_device *hdev,
 	return 0;
 }
 
+static __u8 original_rdesc_buttons[] = {
+	0x05, 0x09, 0x19, 0x01, 0x29, 0x6F,
+	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
+	0x45, 0x01, 0x75, 0x01,	0x95, 0x6F,
+	0x81, 0x02, 0x75, 0x01, 0x95, 0x01,
+	0x81, 0x01
+};
+
 static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 		unsigned int *rsize)
 {
 	int unused_button_numbers = 32;
 
-	hid_info(hdev, "descriptor fixup\n");
+	if (*rsize < 34) {
+		return rdesc;
+	}
 
-	if (*rsize >= 34) {
+	int sig_length = sizeof (original_rdesc_buttons);
+	if (memcmp(rdesc + 8, original_rdesc_buttons, sig_length) == 0) {
+
 		/* Usage Maximum */
-		if (rdesc[12] == 0x29 && rdesc[13] == 111) {
-			rdesc[13] -= unused_button_numbers;
-		}
-		/*  Report Count (button data) */
-		if (rdesc[24] == 0x95 && rdesc[25] == 111) {
-			rdesc[25] -= unused_button_numbers;
-		}
-		/*  Report Count (unused bits) */
-		if (rdesc[30] == 0x95 && rdesc[31] == 1) {
-			rdesc[31] += unused_button_numbers;
-		}
+		rdesc[13] -= unused_button_numbers;
+
+		/*  Report Count for buttons */
+		rdesc[25] -= unused_button_numbers;
+
+		/*  Report Count for padding [HID1_11, 6.2.2.9] */
+		rdesc[31] += unused_button_numbers;
+
+		hid_info(hdev, "winwing descriptor fixed\n");
 	}
 
 	return rdesc;
@@ -64,26 +72,21 @@ static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 static int winwing_raw_event(struct hid_device *hdev,
 		struct hid_report *report, u8 *raw_data, int size)
 {
-	__u8 tmp[4];
-
         if (size >= 15) {
-		/* Save unused bits for buttons 32 .. 63 */
-		memcpy(tmp, raw_data + 5, 4);
-
-		/* Move throttle base buttons to 32 .. 79 */
+		/* Move throttle base buttons 64 .. 111 to 32 .. 79 */
 		memmove(raw_data + 5, raw_data + 9, 6);
 
-		/* Copy unused bits to reserved area */
-		memcpy(raw_data + 11, tmp, 4);
+		/* Clear the padding */
+		memset(raw_data + 11, 0, 4);
         }
 
 	return 0;
 }
 
 static const struct hid_device_id winwing_devices[] = {
-	{ HID_USB_DEVICE(0x4098, 0xbe62),
-		.driver_data = 0 },
-	{ }
+	/* Orion2 base with F/A-18 Hornet grip */
+	{ HID_USB_DEVICE(0x4098, 0xbe62) },
+	{}
 };
 
 MODULE_DEVICE_TABLE(hid, winwing_devices);
@@ -97,4 +100,5 @@ static struct hid_driver winwing_driver = {
 };
 module_hid_driver(winwing_driver);
 
+MODULE_AUTHOR("Ivan Gorinov <linux-kernel@altimeter.info>");
 MODULE_LICENSE("GPL");
