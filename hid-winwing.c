@@ -45,13 +45,13 @@ static __u8 original_rdesc_buttons[] = {
 static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 		unsigned int *rsize)
 {
+	int sig_length = sizeof(original_rdesc_buttons);
 	int unused_button_numbers = 32;
 
 	if (*rsize < 34) {
 		return rdesc;
 	}
 
-	int sig_length = sizeof (original_rdesc_buttons);
 	if (memcmp(rdesc + 8, original_rdesc_buttons, sig_length) == 0) {
 
 		/* Usage Maximum */
