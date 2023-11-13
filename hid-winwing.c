@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 
 /*
- * Enable all buttons on Winwing Orion II throttle base
+ * HID driver for WinWing Orion 2 throttle base with F/A-18 grip
  *
- * HID report descriptor shows 111 buttons, which exceeds maximum
- * number of buttons (80) supported by Linux kernel HID subsystem.
- *
- * This module skips numbers 32-63, unused on F/A-18 grip.
+ * Copyright (c) 2023 Ivan Gorinov
  */
 
 #include <linux/device.h>
@@ -47,11 +44,11 @@ struct winwing_drv_data {
 static int winwing_led_write(struct led_classdev *cdev, enum led_brightness br)
 {
 	struct winwing_led *led = (struct winwing_led *) cdev;
-	struct winwing_drv_data *leds = hid_get_drvdata(led->hdev);
-	__u8 *buf = leds->report_buf;
+	struct winwing_drv_data *data = hid_get_drvdata(led->hdev);
+	__u8 *buf = data->report_buf;
 	int ret;
 
-	mutex_lock(&leds->lock);
+	mutex_lock(&data->lock);
 
 	buf[0] = 0x02;
 	buf[1] = 0x60;
@@ -70,35 +67,34 @@ static int winwing_led_write(struct led_classdev *cdev, enum led_brightness br)
 
 	ret = hid_hw_output_report(led->hdev, buf, 14);
 
-	mutex_unlock(&leds->lock);
+	mutex_unlock(&data->lock);
 
 	return ret;
 }
 
 static int winwing_init_led(struct hid_device *hdev, struct input_dev *input)
 {
-	struct winwing_drv_data *leds;
+	struct winwing_drv_data *data;
 	struct winwing_led *led;
 	int ret;
 	int i;
 
-	size_t leds_size = struct_size(leds, leds, 3);
+	size_t data_size = struct_size(data, leds, 3);
 
-	leds = (struct winwing_drv_data *) devm_kzalloc(&hdev->dev,
-							leds_size, GFP_KERNEL);
+	data = devm_kzalloc(&hdev->dev, data_size, GFP_KERNEL);
 
-	if (!leds)
+	if (!data)
 		return -ENOMEM;
 
-	leds->report_buf = devm_kmalloc(&hdev->dev, MAX_REPORT, GFP_KERNEL);
+	data->report_buf = devm_kmalloc(&hdev->dev, MAX_REPORT, GFP_KERNEL);
 
-	if (!leds->report_buf)
+	if (!data->report_buf)
 		return -ENOMEM;
 
 	for (i = 0; i < 3; i += 1) {
 		struct winwing_led_info *info = &led_info[i];
-		led = &leds->leds[i];
 
+		led = &data->leds[i];
 		led->hdev = hdev;
 		led->number = info->number;
 		led->cdev.max_brightness = info->max_brightness;
@@ -114,7 +110,7 @@ static int winwing_init_led(struct hid_device *hdev, struct input_dev *input)
 			return ret;
 	}
 
-	hid_set_drvdata(hdev, leds);
+	hid_set_drvdata(hdev, data);
 
 	return ret;
 }
@@ -149,9 +145,8 @@ static int winwing_input_configured(struct hid_device *hdev,
 
 	ret = winwing_init_led(hdev, hidinput->input);
 
-	if (ret) {
+	if (ret)
 		hid_err(hdev, "led init failed\n");
-	}
 
 	return ret;
 }
@@ -164,15 +159,21 @@ static __u8 original_rdesc_buttons[] = {
 	0x81, 0x01
 };
 
+/*
+ * HID report descriptor shows 111 buttons, which exceeds maximum
+ * number of buttons (80) supported by Linux kernel HID subsystem.
+ *
+ * This module skips numbers 32-63, unused on F/A-18 Hornet grip.
+ */
+
 static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 		unsigned int *rsize)
 {
 	int sig_length = sizeof(original_rdesc_buttons);
 	int unused_button_numbers = 32;
 
-	if (*rsize < 34) {
+	if (*rsize < 34)
 		return rdesc;
-	}
 
 	if (memcmp(rdesc + 8, original_rdesc_buttons, sig_length) == 0) {
 
@@ -194,13 +195,13 @@ static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 static int winwing_raw_event(struct hid_device *hdev,
 		struct hid_report *report, u8 *raw_data, int size)
 {
-        if (size >= 15) {
-		/* Move throttle base buttons from 64 .. 111 to 32 .. 79 */
+	if (size >= 15) {
+		/* Skip buttons 32 .. 63 */
 		memmove(raw_data + 5, raw_data + 9, 6);
 
 		/* Clear the padding */
 		memset(raw_data + 11, 0, 4);
-        }
+	}
 
 	return 0;
 }
@@ -223,5 +224,4 @@ static struct hid_driver winwing_driver = {
 };
 module_hid_driver(winwing_driver);
 
-MODULE_AUTHOR("Ivan Gorinov <linux-kernel@altimeter.info>");
 MODULE_LICENSE("GPL");
