@@ -6,6 +6,14 @@ Some of the throttle base buttons don't work with Linux because the kernel HID s
 
 This kernel module remaps throttle base buttons to numbers 32 .. 78, reserving only numbers 0 .. 31 for buttons on the throttle grip.
 
+## Setup
+
+Install the header files for currently running kernel. This command is for Debian-based systems (e.g. Ubuntu, Mint):
+
+```
+sudo apt install linux-headers-`uname -r`
+```
+
 ## Build
 
 The following command builds the `winwing` module for currently running kernel.
