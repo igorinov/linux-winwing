@@ -209,6 +209,10 @@ static int winwing_raw_event(struct hid_device *hdev,
 static const struct hid_device_id winwing_devices[] = {
 	/* Orion2 base with F/A-18 Hornet grip */
 	{ HID_USB_DEVICE(0x4098, 0xbe62) },
+
+	/* Orion2 base with F-16 grip */
+	{ HID_USB_DEVICE(0x4098, 0xbe68) },
+
 	{}
 };
 
