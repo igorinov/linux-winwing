@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 /*
- * HID driver for WinWing Orion 2 throttle base with F/A-18 grip
+ * HID driver for WinWing Orion 2 throttle
  *
  * Copyright (c) 2023 Ivan Gorinov
  */
@@ -154,7 +154,7 @@ static int winwing_input_configured(struct hid_device *hdev,
 static __u8 original_rdesc_buttons[] = {
 	0x05, 0x09, 0x19, 0x01, 0x29, 0x6F,
 	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
-	0x45, 0x01, 0x75, 0x01,	0x95, 0x6F,
+	0x45, 0x01, 0x75, 0x01, 0x95, 0x6F,
 	0x81, 0x02, 0x75, 0x01, 0x95, 0x01,
 	0x81, 0x01
 };
@@ -163,7 +163,7 @@ static __u8 original_rdesc_buttons[] = {
  * HID report descriptor shows 111 buttons, which exceeds maximum
  * number of buttons (80) supported by Linux kernel HID subsystem.
  *
- * This module skips numbers 32-63, unused on F/A-18 Hornet grip.
+ * This module skips numbers 32-63, unused on some throttle grips.
  */
 
 static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
@@ -207,12 +207,8 @@ static int winwing_raw_event(struct hid_device *hdev,
 }
 
 static const struct hid_device_id winwing_devices[] = {
-	/* Orion2 base with F/A-18 Hornet grip */
-	{ HID_USB_DEVICE(0x4098, 0xbe62) },
-
-	/* Orion2 base with F-16 grip */
-	{ HID_USB_DEVICE(0x4098, 0xbe68) },
-
+	{ HID_USB_DEVICE(0x4098, 0xbe62) },  /* TGRIP-18 */
+	{ HID_USB_DEVICE(0x4098, 0xbe68) },  /* TGRIP-16EX */
 	{}
 };
 
