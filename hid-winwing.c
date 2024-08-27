@@ -15,6 +15,8 @@
 
 #define MAX_REPORT 16
 
+#define WW_F15E 0xf15e
+
 struct winwing_led {
 	struct led_classdev cdev;
 	struct hid_device *hdev;
@@ -33,8 +35,16 @@ static struct winwing_led_info led_info[3] = {
 	{ 2, 1, "a-g" },
 };
 
+static const __u8 remap_f15e[] = {
+	49, 11, 50, 12, 51, 13, 52, 14, 53, 15,
+	54, 16,	55, 17, 56, 18, 57, 19, 58, 20,
+	27, 24, 28, 25, 31, 26, 32, 27, 33, 28,
+	34, 31,
+	0xff, 0xff };
+
 struct winwing_drv_data {
 	struct hid_device *hdev;
+	const __u8 *remap;
 	__u8 *report_buf;
 	struct mutex lock;
 	unsigned int num_leds;
@@ -79,12 +89,10 @@ static int winwing_init_led(struct hid_device *hdev, struct input_dev *input)
 	int ret;
 	int i;
 
-	size_t data_size = struct_size(data, leds, 3);
-
-	data = devm_kzalloc(&hdev->dev, data_size, GFP_KERNEL);
+	data = hid_get_drvdata(hdev);
 
 	if (!data)
-		return -ENOMEM;
+		return -EINVAL;
 
 	data->report_buf = devm_kmalloc(&hdev->dev, MAX_REPORT, GFP_KERNEL);
 
@@ -110,15 +118,14 @@ static int winwing_init_led(struct hid_device *hdev, struct input_dev *input)
 			return ret;
 	}
 
-	hid_set_drvdata(hdev, data);
-
 	return ret;
 }
 
 static int winwing_probe(struct hid_device *hdev,
 			const struct hid_device_id *id)
 {
-	unsigned int minor;
+	struct winwing_drv_data *data;
+	size_t data_size = struct_size(data, leds, 3);
 	int ret;
 
 	ret = hid_parse(hdev);
@@ -127,13 +134,23 @@ static int winwing_probe(struct hid_device *hdev,
 		return ret;
 	}
 
+
+	data = devm_kzalloc(&hdev->dev, data_size, GFP_KERNEL);
+
+	if (!data)
+		return -ENOMEM;
+
+	if (id->driver_data == WW_F15E) {
+		data->remap = remap_f15e;
+	}
+
+	hid_set_drvdata(hdev, data);
+
 	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
 	if (ret) {
 		hid_err(hdev, "hw start failed\n");
 		return ret;
 	}
-
-	minor = ((struct hidraw *) hdev->hidraw)->minor;
 
 	return 0;
 }
@@ -195,6 +212,31 @@ static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 static int winwing_raw_event(struct hid_device *hdev,
 		struct hid_report *report, u8 *raw_data, int size)
 {
+	struct winwing_drv_data *data = hid_get_drvdata(hdev);
+
+	if (!data)
+		return -EINVAL;
+
+        if (data->remap) {
+		int src, dst;
+		int index_src, index_dst;
+		__u8 mask_src, mask_dst;
+		int i = 0;
+		while (data->remap[i] < 128) {
+			src = data->remap[i++];
+			dst = data->remap[i++];
+			index_src = src / 8 + 1;
+			index_dst = dst / 8 + 1;
+			mask_src = 1 << (src % 8);
+			mask_dst = 1 << (dst % 8);
+			if ((raw_data[index_src] & mask_src) != 0) {
+				raw_data[index_dst] |= mask_dst;
+			} else {
+				raw_data[index_dst] &= ~mask_dst;
+			}
+		}
+        }
+
 	if (size >= 15) {
 		/* Skip buttons 32 .. 63 */
 		memmove(raw_data + 5, raw_data + 9, 6);
@@ -209,6 +251,9 @@ static int winwing_raw_event(struct hid_device *hdev,
 static const struct hid_device_id winwing_devices[] = {
 	{ HID_USB_DEVICE(0x4098, 0xbe62) },  /* TGRIP-18 */
 	{ HID_USB_DEVICE(0x4098, 0xbe68) },  /* TGRIP-16EX */
+/*
+	{ HID_USB_DEVICE(0x4098, 0x????), .driver_data = WW_F15E },
+*/
 	{}
 };
 
