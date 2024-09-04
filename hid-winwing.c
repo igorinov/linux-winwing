@@ -168,11 +168,26 @@ static int winwing_input_configured(struct hid_device *hdev,
 	return ret;
 }
 
-static __u8 original_rdesc_buttons[] = {
+static const __u8 rdesc_buttons_111[] = {
 	0x05, 0x09, 0x19, 0x01, 0x29, 0x6F,
 	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
 	0x45, 0x01, 0x75, 0x01, 0x95, 0x6F,
 	0x81, 0x02, 0x75, 0x01, 0x95, 0x01,
+	0x81, 0x01
+};
+
+static const __u8 rdesc_buttons_128[] = {
+	0x05, 0x09, 0x19, 0x01, 0x29, 0x80,
+	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
+	0x45, 0x01, 0x75, 0x01,	0x95, 0x80,
+	0x81, 0x02
+};
+
+static const __u8 rdesc_buttons_128_fixed[] = {
+	0x05, 0x09, 0x19, 0x01, 0x29, 0x50,
+	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
+	0x45, 0x01, 0x75, 0x01,	0x95, 0x50,
+	0x81, 0x02, 0x75, 0x01, 0x95, 0x30,
 	0x81, 0x01
 };
 
@@ -186,13 +201,42 @@ static __u8 original_rdesc_buttons[] = {
 static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 		unsigned int *rsize)
 {
-	int sig_length = sizeof(original_rdesc_buttons);
-	int unused_button_numbers = 32;
-
 	if (*rsize < 34)
 		return rdesc;
 
-	if (memcmp(rdesc + 8, original_rdesc_buttons, sig_length) == 0) {
+	if (memcmp(rdesc + 8, rdesc_buttons_128, sizeof(rdesc_buttons_128)) == 0) {
+		int src_offset = 0;
+		int dst_offset = 0;
+		int new_rsize = *rsize;
+		__u8 *new_rdesc;
+
+		new_rsize -= sizeof(rdesc_buttons_128);
+		new_rsize += sizeof(rdesc_buttons_128_fixed);
+
+		new_rdesc = devm_kzalloc(&hdev->dev, new_rsize, GFP_KERNEL);
+		if (!new_rdesc) {
+			hid_err(hdev, "unable to allocate new report descriptor\n");
+			return rdesc;
+		}
+
+		memcpy(new_rdesc, rdesc, 8);
+		src_offset += 8;
+		dst_offset += 8;
+
+		memcpy(new_rdesc + dst_offset, rdesc_buttons_128_fixed, sizeof(rdesc_buttons_128_fixed));
+		src_offset += sizeof(rdesc_buttons_128);
+		dst_offset += sizeof(rdesc_buttons_128_fixed);
+
+		memcpy(new_rdesc + dst_offset, rdesc + src_offset, new_rsize - dst_offset);
+
+		hid_info(hdev, "winwing descriptor (128 buttons) fixed\n");
+
+		*rsize = new_rsize;
+		return new_rdesc;
+	}
+
+	if (memcmp(rdesc + 8, rdesc_buttons_111, sizeof(rdesc_buttons_111)) == 0) {
+		int unused_button_numbers = 32;
 
 		/* Usage Maximum */
 		rdesc[13] -= unused_button_numbers;
@@ -203,7 +247,7 @@ static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 		/*  Report Count for padding [HID1_11, 6.2.2.9] */
 		rdesc[31] += unused_button_numbers;
 
-		hid_info(hdev, "winwing descriptor fixed\n");
+		hid_info(hdev, "winwing descriptor (111 buttons) fixed\n");
 	}
 
 	return rdesc;
