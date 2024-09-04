@@ -295,9 +295,7 @@ static int winwing_raw_event(struct hid_device *hdev,
 static const struct hid_device_id winwing_devices[] = {
 	{ HID_USB_DEVICE(0x4098, 0xbe62) },  /* TGRIP-18 */
 	{ HID_USB_DEVICE(0x4098, 0xbe68) },  /* TGRIP-16EX */
-/*
-	{ HID_USB_DEVICE(0x4098, 0x????), .driver_data = WW_F15E },
-*/
+	{ HID_USB_DEVICE(0x4098, 0xbd65), .driver_data = WW_F15E },
 	{}
 };
 
