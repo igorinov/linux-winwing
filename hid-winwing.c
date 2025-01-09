@@ -29,7 +29,7 @@ struct winwing_led_info {
 	const char *led_name;
 };
 
-static struct winwing_led_info led_info[3] = {
+static const struct winwing_led_info led_info[3] = {
 	{ 0, 255, "backlight" },
 	{ 1, 1, "a-a" },
 	{ 2, 1, "a-g" },
@@ -100,7 +100,7 @@ static int winwing_init_led(struct hid_device *hdev, struct input_dev *input)
 		return -ENOMEM;
 
 	for (i = 0; i < 3; i += 1) {
-		struct winwing_led_info *info = &led_info[i];
+		const struct winwing_led_info *info = &led_info[i];
 
 		led = &data->leds[i];
 		led->hdev = hdev;
