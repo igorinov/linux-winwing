@@ -296,6 +296,7 @@ static const struct hid_device_id winwing_devices[] = {
 	{ HID_USB_DEVICE(0x4098, 0xbe62) },  /* TGRIP-18 */
 	{ HID_USB_DEVICE(0x4098, 0xbe68) },  /* TGRIP-16EX */
 	{ HID_USB_DEVICE(0x4098, 0xbd65), .driver_data = WW_F15E },
+	{ HID_USB_DEVICE(0x4098, 0xbd64), .driver_data = WW_F15E /* TGRIP-15EX */ },
 	{}
 };
 
