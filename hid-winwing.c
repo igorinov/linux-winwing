@@ -35,12 +35,13 @@ static const struct winwing_led_info led_info[3] = {
 	{ 2, 1, "a-g" },
 };
 
+/* Button numbers are 1-based to make it easier to find on the diagram. */
 static const __u8 remap_f15e[] = {
-	49, 11, 50, 12, 51, 13, 52, 14, 53, 15,
-	54, 16,	55, 17, 56, 18, 57, 19, 58, 20,
-	27, 24, 28, 25, 31, 26, 32, 27, 33, 28,
-	34, 31,
-	0xff, 0xff };
+	50, 12, 51, 13, 52, 14, 53, 15, 54, 16,
+	55, 17,	56, 18, 57, 19, 58, 20, 59, 21,
+	28, 25, 29, 26, 32, 27, 33, 28, 34, 29,
+	35, 32,
+	255, 0 };
 
 struct winwing_drv_data {
 	struct hid_device *hdev;
@@ -168,7 +169,7 @@ static int winwing_input_configured(struct hid_device *hdev,
 	return ret;
 }
 
-static const __u8 rdesc_buttons_111[] = {
+static const __u8 rdesc_buttons_111_original[] = {
 	0x05, 0x09, 0x19, 0x01, 0x29, 0x6F,
 	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
 	0x45, 0x01, 0x75, 0x01, 0x95, 0x6F,
@@ -176,19 +177,41 @@ static const __u8 rdesc_buttons_111[] = {
 	0x81, 0x01
 };
 
-static const __u8 rdesc_buttons_128[] = {
+static const __u8 rdesc_buttons_111_modified[] = {
+	0x05, 0x09, 0x19, 0x01, 0x29, 0x4F,
+	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
+	0x45, 0x01, 0x75, 0x01, 0x95, 0x4F,
+	0x81, 0x02, 0x75, 0x01, 0x95, 0x21,
+	0x81, 0x01
+};
+
+static const __u8 rdesc_buttons_128_original[] = {
 	0x05, 0x09, 0x19, 0x01, 0x29, 0x80,
 	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
 	0x45, 0x01, 0x75, 0x01,	0x95, 0x80,
 	0x81, 0x02
 };
 
-static const __u8 rdesc_buttons_128_fixed[] = {
+static const __u8 rdesc_buttons_128_modified[] = {
 	0x05, 0x09, 0x19, 0x01, 0x29, 0x50,
 	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
 	0x45, 0x01, 0x75, 0x01,	0x95, 0x50,
 	0x81, 0x02, 0x75, 0x01, 0x95, 0x30,
 	0x81, 0x01
+};
+
+struct descriptor_patch {
+	const __u8 *original;
+	const __u8 *modified;
+	int original_size;
+	int modified_size;
+	const char *name;
+};
+
+static struct descriptor_patch patch_table[] = {
+	{ rdesc_buttons_111_original, rdesc_buttons_111_modified, sizeof(rdesc_buttons_111_original), sizeof(rdesc_buttons_111_modified), "111 buttons" },
+	{ rdesc_buttons_128_original, rdesc_buttons_128_modified, sizeof(rdesc_buttons_128_original), sizeof(rdesc_buttons_128_modified), "128 buttons" },
+	{ NULL, NULL, 0, 0 }
 };
 
 /*
@@ -198,56 +221,51 @@ static const __u8 rdesc_buttons_128_fixed[] = {
  * This module skips numbers 32-63, unused on some throttle grips.
  */
 
-static const __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
+static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
 		unsigned int *rsize)
 {
-	if (*rsize < 34)
-		return rdesc;
+	struct descriptor_patch *patch = patch_table;
+	const int offset_buttons = 8;
 
-	if (memcmp(rdesc + 8, rdesc_buttons_128, sizeof(rdesc_buttons_128)) == 0) {
-		int src_offset = 0;
-		int dst_offset = 0;
-		int new_rsize = *rsize;
-		__u8 *new_rdesc;
-
-		new_rsize -= sizeof(rdesc_buttons_128);
-		new_rsize += sizeof(rdesc_buttons_128_fixed);
-
-		new_rdesc = devm_kzalloc(&hdev->dev, new_rsize, GFP_KERNEL);
-		if (!new_rdesc) {
-			hid_err(hdev, "unable to allocate new report descriptor\n");
-			return rdesc;
+	while (patch->original) {
+		if (patch->original_size + offset_buttons > (*rsize)) {
+			continue;
 		}
 
-		memcpy(new_rdesc, rdesc, 8);
-		src_offset += 8;
-		dst_offset += 8;
+		if (memcmp(rdesc + offset_buttons, patch->original, patch->original_size) == 0) {
+			int src_offset = 0;
+			int dst_offset = 0;
+			int new_rsize = *rsize;
+			__u8 *new_rdesc;
 
-		memcpy(new_rdesc + dst_offset, rdesc_buttons_128_fixed, sizeof(rdesc_buttons_128_fixed));
-		src_offset += sizeof(rdesc_buttons_128);
-		dst_offset += sizeof(rdesc_buttons_128_fixed);
+			/* Compute size of new rdesc, where original part is replaced with modified one */
+			new_rsize -= patch->original_size;
+			new_rsize += patch->modified_size;
 
-		memcpy(new_rdesc + dst_offset, rdesc + src_offset, new_rsize - dst_offset);
+			new_rdesc = devm_kzalloc(&hdev->dev, new_rsize, GFP_KERNEL);
+			if (!new_rdesc) {
+				hid_err(hdev, "unable to allocate new report descriptor\n");
+				return rdesc;
+			}
 
-		hid_info(hdev, "winwing descriptor (128 buttons) fixed\n");
+			/* Copy the part before button info */
+			memcpy(new_rdesc, rdesc, offset_buttons);
+			src_offset += offset_buttons;
+			dst_offset += offset_buttons;
 
-		*rsize = new_rsize;
-		return new_rdesc;
-	}
+			/* Copy modified button info instead of original button info */
+			memcpy(new_rdesc + dst_offset, patch->modified, patch->modified_size);
+			src_offset += sizeof(patch->original_size);
+			dst_offset += sizeof(patch->modified_size);
 
-	if (memcmp(rdesc + 8, rdesc_buttons_111, sizeof(rdesc_buttons_111)) == 0) {
-		int unused_button_numbers = 32;
+			/* Copy the rest of report descriptor */
+			memcpy(new_rdesc + dst_offset, rdesc + src_offset, new_rsize - dst_offset);
 
-		/* Usage Maximum */
-		rdesc[13] -= unused_button_numbers;
+			hid_info(hdev, "winwing descriptor (%s) fixed\n", patch->name);
 
-		/*  Report Count for buttons */
-		rdesc[25] -= unused_button_numbers;
-
-		/*  Report Count for padding [HID1_11, 6.2.2.9] */
-		rdesc[31] += unused_button_numbers;
-
-		hid_info(hdev, "winwing descriptor (111 buttons) fixed\n");
+			*rsize = new_rsize;
+			return new_rdesc;
+		}
 	}
 
 	return rdesc;
@@ -262,27 +280,40 @@ static int winwing_raw_event(struct hid_device *hdev,
 		return -EINVAL;
 
         if (data->remap) {
-		int src, dst;
-		int index_src, index_dst;
-		__u8 mask_src, mask_dst;
-		int i = 0;
-		while (data->remap[i] < 128) {
-			src = data->remap[i++];
-			dst = data->remap[i++];
-			index_src = src / 8 + 1;
-			index_dst = dst / 8 + 1;
-			mask_src = 1 << (src % 8);
-			mask_dst = 1 << (dst % 8);
-			if ((raw_data[index_src] & mask_src) != 0) {
-				raw_data[index_dst] |= mask_dst;
+		const __u64 one = 1;
+		int src_bit, dst_bit;
+		__u64 mask_src, mask_dst;
+		__u64 grip_button_map = 0;
+		int i, k;
+
+		for (k = 0; k < 8; k += 1) {
+			__u64 oct = raw_data[k + 1];
+			grip_button_map |= oct << (k * 8);
+		}
+
+		i = 0;
+		while (data->remap[i] <= 64) {
+			src_bit = data->remap[i++] - 1;
+			dst_bit = data->remap[i++] - 1;
+			mask_src = one << src_bit;
+			mask_dst = one << dst_bit;
+			if ((grip_button_map & mask_src) != 0) {
+				grip_button_map |= mask_dst;
 			} else {
-				raw_data[index_dst] &= ~mask_dst;
+				grip_button_map &= ~mask_dst;
 			}
+		}
+
+		grip_button_map &= 0xffffffff;
+
+		for (k = 0; k < 8; k += 1) {
+			raw_data[k + 1] = grip_button_map & 0xff;
+			grip_button_map >>= 8;
 		}
         }
 
 	if (size >= 15) {
-		/* Skip buttons 32 .. 63 */
+		/* Throttle base buttons are remapped from [64 .. 111] to [32 .. 79] */
 		memmove(raw_data + 5, raw_data + 9, 6);
 
 		/* Clear the padding */
