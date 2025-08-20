@@ -35,17 +35,9 @@ static const struct winwing_led_info led_info[3] = {
 	{ 2, 1, "a-g" },
 };
 
-/* Button numbers are 1-based to make it easier to find on the diagram. */
-static const __u8 remap_f15e[] = {
-	50, 12, 51, 13, 52, 14, 53, 15, 54, 16,
-	55, 17,	56, 18, 57, 19, 58, 20, 59, 21,
-	28, 25, 29, 26, 32, 27, 33, 28, 34, 29,
-	35, 32,
-	255, 0 };
-
 struct winwing_drv_data {
 	struct hid_device *hdev;
-	const __u8 *remap;
+	int grip_buttons;
 	__u8 *report_buf;
 	struct mutex lock;
 	unsigned int num_leds;
@@ -122,6 +114,54 @@ static int winwing_init_led(struct hid_device *hdev, struct input_dev *input)
 	return ret;
 }
 
+static int winwing_input_mapping(struct hid_device *hdev,
+	struct hid_input *hi, struct hid_field *field, struct hid_usage *usage,
+	unsigned long **bit, int *max)
+{
+	struct winwing_drv_data *data;
+	int code = KEY_RESERVED;
+	int button = 0;
+
+	data = hid_get_drvdata(hdev);
+
+	if (!data)
+		return -EINVAL;
+
+	if ((usage->hid & HID_USAGE_PAGE) != HID_UP_BUTTON)
+		return 0;
+
+	if (field->application != HID_GD_JOYSTICK)
+		return 0;
+
+	button = ((usage->hid - 1) & HID_USAGE);
+
+	if (button >= 64) {
+		if (button < 112) {
+			/* Throttle base buttons 65 .. 111 */
+			code = (button - 64) + BTN_TRIGGER_HAPPY + 16;
+		}
+	} else {
+		if (button < 32) {
+			if (button < 16) {
+				/* Grip buttons 1 .. 16 */
+				code = button + BTN_JOYSTICK;
+			} else {
+				/* Grip buttons 17 .. 32 */
+				code = (button - 16) + BTN_TRIGGER_HAPPY;
+			}
+		} else {
+			/* Buttons 33 .. 64 are mapped before BTN_TRIGGER_HAPPY */
+			if (data->grip_buttons > 32) {
+				code = (button - 64) + BTN_TRIGGER_HAPPY;
+			}
+		}
+	}
+
+	hid_map_usage(hi, usage, bit, max, EV_KEY, code);
+
+	return 1;
+}
+
 static int winwing_probe(struct hid_device *hdev,
 			const struct hid_device_id *id)
 {
@@ -141,9 +181,7 @@ static int winwing_probe(struct hid_device *hdev,
 	if (!data)
 		return -ENOMEM;
 
-	if (id->driver_data == WW_F15E) {
-		data->remap = remap_f15e;
-	}
+	data->grip_buttons = id->driver_data;
 
 	hid_set_drvdata(hdev, data);
 
@@ -169,165 +207,11 @@ static int winwing_input_configured(struct hid_device *hdev,
 	return ret;
 }
 
-static const __u8 rdesc_buttons_111_original[] = {
-	0x05, 0x09, 0x19, 0x01, 0x29, 0x6F,
-	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
-	0x45, 0x01, 0x75, 0x01, 0x95, 0x6F,
-	0x81, 0x02, 0x75, 0x01, 0x95, 0x01,
-	0x81, 0x01
-};
-
-static const __u8 rdesc_buttons_111_modified[] = {
-	0x05, 0x09, 0x19, 0x01, 0x29, 0x4F,
-	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
-	0x45, 0x01, 0x75, 0x01, 0x95, 0x4F,
-	0x81, 0x02, 0x75, 0x01, 0x95, 0x21,
-	0x81, 0x01
-};
-
-static const __u8 rdesc_buttons_128_original[] = {
-	0x05, 0x09, 0x19, 0x01, 0x29, 0x80,
-	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
-	0x45, 0x01, 0x75, 0x01,	0x95, 0x80,
-	0x81, 0x02
-};
-
-static const __u8 rdesc_buttons_128_modified[] = {
-	0x05, 0x09, 0x19, 0x01, 0x29, 0x50,
-	0x15, 0x00, 0x25, 0x01, 0x35, 0x00,
-	0x45, 0x01, 0x75, 0x01,	0x95, 0x50,
-	0x81, 0x02, 0x75, 0x01, 0x95, 0x30,
-	0x81, 0x01
-};
-
-struct descriptor_patch {
-	const __u8 *original;
-	const __u8 *modified;
-	int original_size;
-	int modified_size;
-	const char *name;
-};
-
-static struct descriptor_patch patch_table[] = {
-	{ rdesc_buttons_111_original, rdesc_buttons_111_modified, sizeof(rdesc_buttons_111_original), sizeof(rdesc_buttons_111_modified), "111 buttons" },
-	{ rdesc_buttons_128_original, rdesc_buttons_128_modified, sizeof(rdesc_buttons_128_original), sizeof(rdesc_buttons_128_modified), "128 buttons" },
-	{ NULL, NULL, 0, 0 }
-};
-
-/*
- * HID report descriptor shows 111 buttons, which exceeds maximum
- * number of buttons (80) supported by Linux kernel HID subsystem.
- *
- * This module skips numbers 32-63, unused on some throttle grips.
- */
-
-static __u8 *winwing_report_fixup(struct hid_device *hdev, __u8 *rdesc,
-		unsigned int *rsize)
-{
-	struct descriptor_patch *patch = patch_table;
-	const int offset_buttons = 8;
-
-	while (patch->original) {
-		if (patch->original_size + offset_buttons > (*rsize)) {
-			continue;
-		}
-
-		if (memcmp(rdesc + offset_buttons, patch->original, patch->original_size) == 0) {
-			int src_offset = 0;
-			int dst_offset = 0;
-			int new_rsize = *rsize;
-			__u8 *new_rdesc;
-
-			/* Compute size of new rdesc, where original part is replaced with modified one */
-			new_rsize -= patch->original_size;
-			new_rsize += patch->modified_size;
-
-			new_rdesc = devm_kzalloc(&hdev->dev, new_rsize, GFP_KERNEL);
-			if (!new_rdesc) {
-				hid_err(hdev, "unable to allocate new report descriptor\n");
-				return rdesc;
-			}
-
-			/* Copy the part before button info */
-			memcpy(new_rdesc, rdesc, offset_buttons);
-			src_offset += offset_buttons;
-			dst_offset += offset_buttons;
-
-			/* Copy modified button info instead of original button info */
-			memcpy(new_rdesc + dst_offset, patch->modified, patch->modified_size);
-			src_offset += sizeof(patch->original_size);
-			dst_offset += sizeof(patch->modified_size);
-
-			/* Copy the rest of report descriptor */
-			memcpy(new_rdesc + dst_offset, rdesc + src_offset, new_rsize - dst_offset);
-
-			hid_info(hdev, "winwing descriptor (%s) fixed\n", patch->name);
-
-			*rsize = new_rsize;
-			return new_rdesc;
-		}
-	}
-
-	return rdesc;
-}
-
-static int winwing_raw_event(struct hid_device *hdev,
-		struct hid_report *report, u8 *raw_data, int size)
-{
-	struct winwing_drv_data *data = hid_get_drvdata(hdev);
-
-	if (!data)
-		return -EINVAL;
-
-        if (data->remap) {
-		const __u64 one = 1;
-		int src_bit, dst_bit;
-		__u64 mask_src, mask_dst;
-		__u64 grip_button_map = 0;
-		int i, k;
-
-		for (k = 0; k < 8; k += 1) {
-			__u64 oct = raw_data[k + 1];
-			grip_button_map |= oct << (k * 8);
-		}
-
-		i = 0;
-		while (data->remap[i] <= 64) {
-			src_bit = data->remap[i++] - 1;
-			dst_bit = data->remap[i++] - 1;
-			mask_src = one << src_bit;
-			mask_dst = one << dst_bit;
-			if ((grip_button_map & mask_src) != 0) {
-				grip_button_map |= mask_dst;
-			} else {
-				grip_button_map &= ~mask_dst;
-			}
-		}
-
-		grip_button_map &= 0xffffffff;
-
-		for (k = 0; k < 8; k += 1) {
-			raw_data[k + 1] = grip_button_map & 0xff;
-			grip_button_map >>= 8;
-		}
-        }
-
-	if (size >= 15) {
-		/* Throttle base buttons are remapped from [64 .. 111] to [32 .. 79] */
-		memmove(raw_data + 5, raw_data + 9, 6);
-
-		/* Clear the padding */
-		memset(raw_data + 11, 0, 4);
-	}
-
-	return 0;
-}
-
 static const struct hid_device_id winwing_devices[] = {
-	{ HID_USB_DEVICE(0x4098, 0xbe62) },  /* TGRIP-18 */
-	{ HID_USB_DEVICE(0x4098, 0xbe68) },  /* TGRIP-16EX */
-	{ HID_USB_DEVICE(0x4098, 0xbd65), .driver_data = WW_F15E },
-	{ HID_USB_DEVICE(0x4098, 0xbd64), .driver_data = WW_F15E /* TGRIP-15EX */ },
+	{ HID_USB_DEVICE(0x4098, 0xbe62), .driver_data = 28 },  /* TGRIP-18   */
+	{ HID_USB_DEVICE(0x4098, 0xbe68), .driver_data = 26 },  /* TGRIP-16EX */
+	{ HID_USB_DEVICE(0x4098, 0xbd65), .driver_data = 62 },  /* TGRIP-15E  */
+	{ HID_USB_DEVICE(0x4098, 0xbd64), .driver_data = 62 },  /* TGRIP-15EX */
 	{}
 };
 
@@ -336,10 +220,9 @@ MODULE_DEVICE_TABLE(hid, winwing_devices);
 static struct hid_driver winwing_driver = {
 	.name = "winwing",
 	.id_table = winwing_devices,
+	.input_mapping = winwing_input_mapping,
 	.probe = winwing_probe,
 	.input_configured = winwing_input_configured,
-	.report_fixup = winwing_report_fixup,
-	.raw_event = winwing_raw_event,
 };
 module_hid_driver(winwing_driver);
 
