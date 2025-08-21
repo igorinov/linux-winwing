@@ -114,6 +114,39 @@ static int winwing_init_led(struct hid_device *hdev, struct input_dev *input)
 	return ret;
 }
 
+static int winwing_map_button(int button, int grip_buttons)
+{
+	if (button < 0) {
+		return KEY_RESERVED;
+	}
+
+	if (button > 111) {
+		return KEY_RESERVED;
+	}
+
+	if (button < 16) {
+		/* Grip buttons 1 .. 16 are mapped to key codes 288 .. 303 */
+		return button + BTN_JOYSTICK;
+	}
+
+	if (button >= 64) {
+		/* Base buttons 65 .. 112 are mapped to key codes 720 .. 767 */
+		return (button - 64) + BTN_TRIGGER_HAPPY + 16;
+	}
+
+	if (grip_buttons <= 32) {
+		if (button < 32) {
+			/* Grip buttons 17 .. 32 are mapped to key codes 704 .. 719 */
+			return (button - 16) + BTN_TRIGGER_HAPPY;
+		}
+	} else {
+		/* Grip buttons 17 .. 64 are mapped to key codes 672 .. 719 */
+		return (button - 16) + BTN_TRIGGER_HAPPY - 32;
+	}
+
+	return KEY_RESERVED;
+}
+
 static int winwing_input_mapping(struct hid_device *hdev,
 	struct hid_input *hi, struct hid_field *field, struct hid_usage *usage,
 	unsigned long **bit, int *max)
@@ -134,28 +167,7 @@ static int winwing_input_mapping(struct hid_device *hdev,
 		return 0;
 
 	button = ((usage->hid - 1) & HID_USAGE);
-
-	if (button >= 64) {
-		if (button < 112) {
-			/* Throttle base buttons 65 .. 111 */
-			code = (button - 64) + BTN_TRIGGER_HAPPY + 16;
-		}
-	} else {
-		if (button < 32) {
-			if (button < 16) {
-				/* Grip buttons 1 .. 16 */
-				code = button + BTN_JOYSTICK;
-			} else {
-				/* Grip buttons 17 .. 32 */
-				code = (button - 16) + BTN_TRIGGER_HAPPY;
-			}
-		} else {
-			/* Buttons 33 .. 64 are mapped before BTN_TRIGGER_HAPPY */
-			if (data->grip_buttons > 32) {
-				code = (button - 64) + BTN_TRIGGER_HAPPY;
-			}
-		}
-	}
+	code = winwing_map_button(button, data->grip_buttons);
 
 	hid_map_usage(hi, usage, bit, max, EV_KEY, code);
 
@@ -208,8 +220,8 @@ static int winwing_input_configured(struct hid_device *hdev,
 }
 
 static const struct hid_device_id winwing_devices[] = {
-	{ HID_USB_DEVICE(0x4098, 0xbe62), .driver_data = 28 },  /* TGRIP-18   */
-	{ HID_USB_DEVICE(0x4098, 0xbe68), .driver_data = 26 },  /* TGRIP-16EX */
+	{ HID_USB_DEVICE(0x4098, 0xbe62), .driver_data = 31 },  /* TGRIP-18   */
+	{ HID_USB_DEVICE(0x4098, 0xbe68), .driver_data = 31 },  /* TGRIP-16EX */
 	{ HID_USB_DEVICE(0x4098, 0xbd65), .driver_data = 62 },  /* TGRIP-15E  */
 	{ HID_USB_DEVICE(0x4098, 0xbd64), .driver_data = 62 },  /* TGRIP-15EX */
 	{}
