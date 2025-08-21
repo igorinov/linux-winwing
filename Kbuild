@@ -1,3 +1,3 @@
-obj-m := hid-winwing.o
+obj-m := hid-winwing2.o
 
-hid-winwing2-y: hid-winwing.o
+hid-winwing2-y: hid-winwing2.o

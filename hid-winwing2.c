@@ -230,7 +230,7 @@ static const struct hid_device_id winwing_devices[] = {
 MODULE_DEVICE_TABLE(hid, winwing_devices);
 
 static struct hid_driver winwing_driver = {
-	.name = "winwing",
+	.name = "winwing2",
 	.id_table = winwing_devices,
 	.input_mapping = winwing_input_mapping,
 	.probe = winwing_probe,
