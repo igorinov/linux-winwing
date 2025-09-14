@@ -1,17 +1,20 @@
 **Note**
-This module is already included in Linux kernel 6.10 (and possibly later).
+An earlier version of this module is included in Linux kernel 6.10 (TGRIP-16EX and TGRIP-18 only).
 
 # linux-winwing
 Linux kernel module for [WinWing](https://winwingsim.com/) Orion2 throttle base with the following grip handles:
 
-  * TGRIP-18
+  * TGRIP-15E
+  * TGRIP-15EX
   * TGRIP-16EX
+  * TGRIP-18
 
 On the Orion 2 throttle, numbers 0 .. 63 are reserved for buttons on the throttle grip; the throttle base buttons have numbers 64 .. 110.
-Some of the throttle base buttons don't work with Linux because the kernel HID subsystem only supports up to 80 buttons.
+Some of the throttle base buttons don't work with Linux because the kernel HID subsystem only supports up to 80 buttons without special kernel modules.
 
-This kernel module remaps throttle base buttons to numbers 32 .. 78, reserving only numbers 0 .. 31 for buttons on the throttle grip.
-Other grip handles do have more than 32 codes (every position of a switch has its own button code).
+TGRIP-16EX, TGRIP-18: Unused button numbers 33 .. 64 are not mapped.
+
+TGRIIP-15E, TGRIP-15EX: Buttons 17 .. 44 are maped to KEY_MACRO1 .. KEY_MACRO28.
 
 ## Setup
 
