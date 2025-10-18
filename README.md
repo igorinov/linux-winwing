@@ -1,5 +1,6 @@
 **Note**
 An earlier version of this module is included in Linux kernel 6.10 (TGRIP-16EX and TGRIP-18 only).
+Kernel 6.19 is going to have the full version.
 
 # linux-winwing
 Linux kernel module for [WinWing](https://winwingsim.com/) Orion2 throttle base with the following grip handles:
