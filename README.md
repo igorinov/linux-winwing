@@ -15,9 +15,16 @@ Linux kernel module for [WinWing](https://winwingsim.com/) Orion2 throttle base 
 On the Orion 2 throttle, numbers 0 .. 63 are reserved for buttons on the throttle grip; the throttle base buttons have numbers 64 .. 110.
 Some of the throttle base buttons don't work with Linux because the kernel HID subsystem only supports up to 80 buttons without special kernel modules.
 
-TGRIP-16EX, TGRIP-18: Unused button numbers 33 .. 64 are not mapped.
+## TGRIP-16EX, TGRIP-18
 
-TGRIIP-15E, TGRIP-15EX: Buttons 17 .. 44 are maped to KEY_MACRO1 .. KEY_MACRO28.
+Unused button numbers 33 .. 64 are not mapped.
+
+## TGRIP-15E, TGRIP-15EX
+
+Buttons 17 .. 44 are maped to KEY_MACRO1 .. KEY_MACRO28.
+
+Rumble: left is "strong" and right is "weak".
+Left and right handles probably have the same motors, but rumble feels stronger on the left handle because it's smaller.
 
 ## Setup
 
