@@ -12,6 +12,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/workqueue.h>
 
 #define MAX_REPORT 16
 
@@ -37,9 +38,12 @@ static const struct winwing_led_info led_info[3] = {
 
 struct winwing_drv_data {
 	struct hid_device *hdev;
-	int grip_buttons;
 	__u8 *report_buf;
 	struct mutex lock;
+	struct work_struct rumble_work;
+	__u16 rumble_left;
+	__u16 rumble_right;
+	int grip_buttons;
 	unsigned int num_leds;
 	struct winwing_led leds[];
 };
@@ -86,11 +90,6 @@ static int winwing_init_led(struct hid_device *hdev, struct input_dev *input)
 
 	if (!data)
 		return -EINVAL;
-
-	data->report_buf = devm_kmalloc(&hdev->dev, MAX_REPORT, GFP_KERNEL);
-
-	if (!data->report_buf)
-		return -ENOMEM;
 
 	for (i = 0; i < 3; i += 1) {
 		const struct winwing_led_info *info = &led_info[i];
@@ -174,6 +173,95 @@ static int winwing_input_mapping(struct hid_device *hdev,
 	return 1;
 }
 
+static int winwing_haptic_rumble(struct winwing_drv_data *data, __u16 left, __u16 right)
+{
+	__u8 *buf = data->report_buf;
+	int ret;
+
+	if (!buf)
+		return -EINVAL;
+
+	mutex_lock(&data->lock);
+	buf[0] = 0x02;
+	buf[1] = 0x01;
+	buf[2] = 0xbf;
+	buf[3] = 0x00;
+	buf[4] = 0x00;
+	buf[5] = 0x03;
+	buf[6] = 0x49;
+	buf[7] = 0x00;
+	buf[8] = left >> 8;
+	buf[9] = 0x00;
+	buf[10] = 0;
+	buf[11] = 0;
+	buf[12] = 0;
+	buf[13] = 0;
+
+	ret = hid_hw_output_report(data->hdev, buf, 14);
+	if (ret < 0) {
+		hid_err(data->hdev, "error %d (%*ph)\n", ret, 14, buf);
+		return ret;
+	}
+
+	buf[0] = 0x02;
+	buf[1] = 0x03;
+	buf[2] = 0xbf;
+	buf[3] = 0x00;
+	buf[4] = 0x00;
+	buf[5] = 0x03;
+	buf[6] = 0x49;
+	buf[7] = 0x00;
+	buf[8] = right >> 8;
+	buf[9] = 0x00;
+	buf[10] = 0;
+	buf[11] = 0;
+	buf[12] = 0;
+	buf[13] = 0;
+
+	ret = hid_hw_output_report(data->hdev, buf, 14);
+	if (ret < 0) {
+		hid_err(data->hdev, "error %d (%*ph)\n", ret, 14, buf);
+		return ret;
+	}
+
+	mutex_unlock(&data->lock);
+
+	return ret;
+}
+
+static void winwing_haptic_rumble_cb(struct work_struct *work)
+{
+	struct winwing_drv_data *data = container_of(work, struct winwing_drv_data, rumble_work);
+
+	winwing_haptic_rumble(data, data->rumble_left, data->rumble_right);
+}
+
+static int winwing_play_effect(struct input_dev *dev, void *context,
+				struct ff_effect *effect)
+{
+	struct winwing_drv_data *data = (struct winwing_drv_data *) context;
+
+	if (effect->type != FF_RUMBLE)
+		return 0;
+
+	data->rumble_left = effect->u.rumble.strong_magnitude;
+	data->rumble_right = effect->u.rumble.weak_magnitude;
+
+	return schedule_work(&data->rumble_work);
+}
+
+static int winwing_init_ff(struct hid_device *hdev, struct hid_input *hidinput)
+{
+	struct winwing_drv_data *data = (struct winwing_drv_data *) hid_get_drvdata(hdev);
+
+	if (data->grip_buttons < 62)
+		return 0;
+
+	input_set_capability(hidinput->input, EV_FF, FF_RUMBLE);
+
+	return input_ff_create_memless(hidinput->input, data, winwing_play_effect);
+}
+
 static int winwing_probe(struct hid_device *hdev,
 			const struct hid_device_id *id)
 {
@@ -193,28 +281,53 @@ static int winwing_probe(struct hid_device *hdev,
 	if (!data)
 		return -ENOMEM;
 
+	data->hdev = hdev;
+
+	data->report_buf = devm_kmalloc(&hdev->dev, MAX_REPORT, GFP_KERNEL);
+
+	if (!data->report_buf)
+		return -ENOMEM;
+
 	data->grip_buttons = id->driver_data;
 
 	hid_set_drvdata(hdev, data);
 
+	INIT_WORK(&data->rumble_work, winwing_haptic_rumble_cb);
+
 	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
 	if (ret) {
 		hid_err(hdev, "hw start failed\n");
+		cancel_work_sync(&data->rumble_work);
 		return ret;
 	}
 
 	return 0;
 }
 
+static void winwing_remove(struct hid_device *hdev)
+{
+	struct winwing_drv_data *data = (struct winwing_drv_data *) hid_get_drvdata(hdev);
+
+	if (!data)
+		return;
+
+	cancel_work_sync(&data->rumble_work);
+
+	hid_hw_close(hdev);
+	hid_hw_stop(hdev);
+}
+
 static int winwing_input_configured(struct hid_device *hdev,
 			struct hid_input *hidinput)
 {
-	int ret;
+	int ret = 0;
 
 	ret = winwing_init_led(hdev, hidinput->input);
 
 	if (ret)
 		hid_err(hdev, "led init failed\n");
+
+	winwing_init_ff(hdev, hidinput);
 
 	return ret;
 }
@@ -234,6 +347,7 @@ static struct hid_driver winwing_driver = {
 	.id_table = winwing_devices,
 	.input_mapping = winwing_input_mapping,
 	.probe = winwing_probe,
+	.remove = winwing_remove,
 	.input_configured = winwing_input_configured,
 };
 module_hid_driver(winwing_driver);
