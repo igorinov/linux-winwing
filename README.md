@@ -2,10 +2,10 @@
 Kernel versions 6.10 ‐ 6.18 include an earlier version of this module (TGRIP-16EX and TGRIP-18 only).
 
 **Note**
-Kernel 6.19 is going to have the full version, I think it's going to be released at the end of January 2026.
+Kernel 6.19 is going to have the full version (without rumble support), to be released in February 2026.
 
 # linux-winwing
-Linux kernel module for [WinWing](https://winwingsim.com/) Orion2 throttle base with the following grip handles:
+Linux kernel module for [WinWing](https://winctrl.com/) Orion2 throttle base with the following grip handles:
 
   * TGRIP-15E
   * TGRIP-15EX
