@@ -11,6 +11,10 @@ Linux kernel module for [WinWing](https://winctrl.com/) Orion2 throttle base wit
   - Kernel versions 6.19 - 7.0 support all throttle grips, but no rumble feedback;
   - Kernel 7.1 will have rumble feedback support.
 
+## Known forks
+
+[URSA MINOR fork](https://github.com/f3nr1l/hid-winwing)
+
 ## Button mapping
 
 On the Orion 2 throttle, numbers 0 .. 63 are reserved for buttons on the throttle grip; the throttle base buttons have numbers 64 .. 110.
@@ -22,7 +26,7 @@ Unused button numbers 33 .. 64 are not mapped.
 
 ### TGRIP-15E, TGRIP-15EX
 
-Buttons 17 .. 44 are maped to KEY_MACRO1 .. KEY_MACRO28.
+Buttons 17 .. 44 are mapped to KEY_MACRO1 .. KEY_MACRO28.
 
 Rumble: left is "strong" and right is "weak".
 Left and right handles probably have the same motors, but rumble feels stronger on the left handle because it's smaller.
